@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>COLAPS</title>
+<style>
+body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; background: linear-gradient(135deg,#667eea 0%,#764ba2 100%); min-height: 100vh; }
+h1 { margin-bottom: 10px; color: white; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+.subtitle { color: rgba(255,255,255,0.9); margin-bottom: 20px; font-size: 14px; }
+.container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+#canvas { border: 2px solid #999; background: white; cursor: crosshair; border-radius: 8px; }
+.controls { margin-top: 15px; display: flex; gap: 10px; justify-content: center; }
+button { background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.3s; }
+button:hover { background: #5568d3; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+button:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+table { margin-top: 20px; border-collapse: collapse; width: 100%; max-width: 300px; }
+th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: center; }
+th { background: #667eea; color: white; font-weight: 600; }
+tr:nth-child(even) { background: #f9f9f9; }
+.cluster-info { margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 8px; max-width: 500px; }
+.cluster-item { margin-bottom: 10px; padding: 10px; background: white; border-radius: 6px; border-left: 4px solid; }
+</style>
+</head>
+<body>
+<h1>Laboratory work</h1> <h1>topic taxonomy algorithms. KOLAPS</h1><h1>Markosyan Ani</h1>
+<p class="subtitle"></p>
+<div class="container">
+<canvas id="canvas" width="500" height="400"></canvas>
+<div class="controls">
+<button id="clusterBtn">colaps</button>
+<button id="resetBtn">reset</button>
+</div>
+<table id="pointsTable">
+<thead><tr><th>#</th><th>coordinates (x, y)</th></tr></thead>
+<tbody></tbody>
+</table>
+<div id="clusterResults"></div>
+</div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const points = [];
+const colors = ['#e53935','#43a047','#1e88e5','#fdd835','#8e24aa','#fb8c00','#00897b','#d81b60'];
+
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+  points.push({x, y});
+  redraw();
+  updateTable();
+});
+
+document.getElementById('resetBtn').onclick = () => {
+  points.length = 0;
+  redraw();
+  updateTable();
+  document.getElementById('clusterResults').innerHTML = '';
+};
+
+document.getElementById('clusterBtn').onclick = () => {
+  if(points.length < 2) return alert("Add at least 2 points!");
+  animateCollapse(points);
+};
+
+function redraw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawPoints(points, 'black');
+}
+
+function drawPoints(arr, color='black') {
+  ctx.fillStyle = color;
+  arr.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, 2*Math.PI);
+    ctx.fill();
+  });
+}
+
+function updateTable() {
+  const tbody = document.querySelector('#pointsTable tbody');
+  tbody.innerHTML = '';
+  points.forEach((p,i) => {
+    tbody.insertAdjacentHTML('beforeend', `<tr><td>${i+1}</td><td>(${Math.round(p.x)}, ${Math.round(p.y)})</td></tr>`);
+  });
+}
+
+function animateCollapse(originalPoints) {
+  const radius = chooseRadius(originalPoints);
+  let currentPoints = originalPoints.map(p=>({x:p.x,y:p.y}));
+  const maxIterations = 100;
+  const threshold = 0.5;
+  let iter = 0;
+  const speed = 0.05;
+
+  function step() {
+    let maxShift = 0;
+    const newPoints = currentPoints.map((p,i) => {
+      const neighbors = getPointsInRadius(currentPoints, p, radius);
+      const centerOfMass = getCenterOfMass(neighbors);
+      const newX = p.x + (centerOfMass.x - p.x)*speed;
+      const newY = p.y + (centerOfMass.y - p.y)*speed;
+      const shift = Math.hypot(p.x-newX, p.y-newY);
+      if(shift>maxShift) maxShift = shift;
+      return {x:newX,y:newY};
+    });
+    currentPoints = newPoints;
+    iter++;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    drawPoints(originalPoints,'black');
+    drawPoints(currentPoints,'red');
+    if(maxShift>threshold && iter<maxIterations) setTimeout(step,50);
+    else {
+      const clusters = groupIntoClustersByProximity(originalPoints,currentPoints,radius);
+      drawClusters(clusters);
+      displayClusterInfo(clusters);
+    }
+  }
+  step();
+}
+
+function chooseRadius(points){
+  let sum=0, count=0;
+  for(let i=0;i<points.length;i++) for(let j=i+1;j<points.length;j++){sum+=distance(points[i],points[j]); count++;}
+  return (sum/count)/2.5;
+}
+
+function getPointsInRadius(points, center, r){ return points.filter(p => distance(p, center)<=r); }
+
+function getCenterOfMass(points){
+  let sx=0, sy=0;
+  points.forEach(p=>{sx+=p.x; sy+=p.y;});
+  return {x: sx/points.length, y: sy/points.length};
+}
+
+function distance(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+
+function groupIntoClustersByProximity(originalPoints, convergedPoints, radius){
+  const centers=[], threshold=radius, clusterMap=new Map();
+  for(let i=0;i<convergedPoints.length;i++){
+    const p=convergedPoints[i];
+    let found=false;
+    for(let j=0;j<centers.length;j++){
+      if(distance(p, centers[j])<=threshold){
+        clusterMap.get(j).push(originalPoints[i]);
+        centers[j]=getCenterOfMass(clusterMap.get(j));
+        found=true;
+        break;
+      }
+    }
+    if(!found){ const idx=centers.length; centers.push(p); clusterMap.set(idx,[originalPoints[i]]); }
+  }
+  const clusters=[];
+  for(let i=0;i<centers.length;i++){
+    const pts=clusterMap.get(i), finalCenter=getCenterOfMass(pts);
+    clusters.push({id:i+1, center:finalCenter, points: pts, radius: radius});
+  }
+  return clusters;
+}
+
+function drawClusters(clusters){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  clusters.forEach((cluster, idx) => {
+    const color = colors[idx%colors.length];
+    ctx.strokeStyle=color; ctx.lineWidth=2; ctx.setLineDash([5,5]);
+    ctx.beginPath(); ctx.arc(cluster.center.x, cluster.center.y, cluster.radius, 0, 2*Math.PI); ctx.stroke();
+    ctx.setLineDash([]); ctx.strokeStyle=color; ctx.lineWidth=1; ctx.globalAlpha=0.3;
+    cluster.points.forEach(p=>{ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(cluster.center.x, cluster.center.y); ctx.stroke();});
+    ctx.globalAlpha=1.0; drawPoints(cluster.points,color);
+    ctx.beginPath(); ctx.fillStyle=color; ctx.arc(cluster.center.x, cluster.center.y, 7, 0, 2*Math.PI); ctx.fill();
+    ctx.strokeStyle='white'; ctx.lineWidth=2; ctx.stroke();
+    ctx.fillStyle='black'; ctx.font='bold 12px Arial'; ctx.fillText(`C${cluster.id}`, cluster.center.x+12, cluster.center.y-12);
+  });
+}
+
+function displayClusterInfo(clusters){
+  const resultsDiv=document.getElementById('clusterResults');
+  let html='<div class="cluster-info">';
+  html+=`<h3>FOUND: ${clusters.length}</h3>`;
+  clusters.forEach((cluster, idx) => {
+    const color=colors[idx%colors.length];
+    html+=`<div class="cluster-item" style="border-left-color:${color}">`;
+    html+=`<strong>Cluster ${cluster.id}</strong><br>`;
+    html+=`Center: (${Math.round(cluster.center.x)}, ${Math.round(cluster.center.y)})<br>`;
+    html+=`Points: ${cluster.points.length}<br>`;
+    html+=`<small>Coordinates: ${cluster.points.map(p=>`(${Math.round(p.x)}, ${Math.round(p.y)})`).join(', ')}</small>`;
+    html+='</div>';
+  });
+  html+='</div>';
+  resultsDiv.innerHTML=html;
+}
+</script>
+</body>
+</html>
